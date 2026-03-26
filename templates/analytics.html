@@ -1,0 +1,189 @@
+{% extends 'base.html' %}
+
+{% block title %}Analytics - Mechanical ERP{% endblock %}
+
+{% block extra_css %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="dashboard-layout">
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <h2>🔧 Mechanical ERP</h2>
+        </div>
+        <nav class="sidebar-nav">
+            <a href="/" class="nav-item">Dashboard</a>
+            <a href="/components/" class="nav-item">Components</a>
+            <a href="/projects/" class="nav-item">Projects</a>
+            <a href="/analytics/" class="nav-item active">Analytics</a>
+        </nav>
+    </aside>
+    
+    <main class="main-content">
+        <div class="top-navbar">
+            <h1>Analytics Dashboard</h1>
+            <div class="user-info">
+                <span>Workshop Control Panel</span>
+            </div>
+        </div>
+        
+        <div class="card-grid">
+            <div class="card">
+                <h3>Total Inventory Value</h3>
+                <div class="value" id="inventoryValue">$0.00</div>
+            </div>
+            <div class="card">
+                <h3>Total Projects</h3>
+                <div class="value" id="totalProjects">0</div>
+            </div>
+            <div class="card">
+                <h3>Active Projects</h3>
+                <div class="value" id="activeProjects">0</div>
+            </div>
+            <div class="card">
+                <h3>Low Stock Items</h3>
+                <div class="value" id="lowStockItems">0</div>
+            </div>
+        </div>
+        
+        <div class="chart-grid">
+            <div class="chart-container">
+                <h2>Cost Distribution by Category</h2>
+                <canvas id="categoryChart"></canvas>
+            </div>
+            
+            <div class="chart-container">
+                <h2>Most Used Components</h2>
+                <canvas id="usageChart"></canvas>
+            </div>
+        </div>
+        
+        <div class="chart-container">
+            <h2>Project Status Distribution</h2>
+            <canvas id="projectChart"></canvas>
+        </div>
+    </main>
+</div>
+
+<script>
+let categoryChart, usageChart, projectChart;
+
+async function loadAnalytics() {
+    try {
+        const data = await AnalyticsAPI.getData();
+        
+        // Update stats cards
+        document.getElementById('inventoryValue').textContent = formatCurrency(data.total_inventory_value);
+        document.getElementById('totalProjects').textContent = data.project_stats.total;
+        document.getElementById('activeProjects').textContent = data.project_stats.in_progress;
+        document.getElementById('lowStockItems').textContent = data.low_stock_count;
+        
+        // Render charts
+        renderCategoryChart(data.category_costs);
+        renderUsageChart(data.most_used_components);
+        renderProjectChart(data.project_stats);
+    } catch (error) {
+        showAlert('Failed to load analytics: ' + error.message, 'danger');
+    }
+}
+
+function renderCategoryChart(data) {
+    const ctx = document.getElementById('categoryChart').getContext('2d');
+    
+    if (categoryChart) categoryChart.destroy();
+    
+    categoryChart = new Chart(ctx, {
+        type: 'pie',
+        data: {
+            labels: data.map(d => d.category),
+            datasets: [{
+                data: data.map(d => d.total_cost || 0),
+                backgroundColor: [
+                    '#2563eb',
+                    '#10b981',
+                    '#f59e0b',
+                    '#ef4444',
+                    '#8b5cf6',
+                    '#ec4899',
+                    '#06b6d4'
+                ]
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return context.label + ': ' + formatCurrency(context.parsed);
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+function renderUsageChart(data) {
+    const ctx = document.getElementById('usageChart').getContext('2d');
+    
+    if (usageChart) usageChart.destroy();
+    
+    usageChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: data.map(d => d.component__name),
+            datasets: [{
+                label: 'Quantity Used',
+                data: data.map(d => d.total_used),
+                backgroundColor: '#2563eb'
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    display: false
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true
+                }
+            }
+        }
+    });
+}
+
+function renderProjectChart(stats) {
+    const ctx = document.getElementById('projectChart').getContext('2d');
+    
+    if (projectChart) projectChart.destroy();
+    
+    projectChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: ['Planning', 'In Progress', 'Completed'],
+            datasets: [{
+                data: [stats.planning, stats.in_progress, stats.completed],
+                backgroundColor: ['#3b82f6', '#f59e0b', '#10b981']
+            }]
+        },
+        options: {
+            responsive: true,
+            plugins: {
+                legend: {
+                    position: 'bottom'
+                }
+            }
+        }
+    });
+}
+
+loadAnalytics();
+</script>
+{% endblock %}

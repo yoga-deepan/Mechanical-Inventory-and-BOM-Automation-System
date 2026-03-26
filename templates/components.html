@@ -1,0 +1,259 @@
+{% extends 'base.html' %}
+
+{% block title %}Components - Mechanical ERP{% endblock %}
+
+{% block content %}
+<div class="dashboard-layout">
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <h2>🔧 Mechanical ERP</h2>
+        </div>
+        <nav class="sidebar-nav">
+            <a href="/" class="nav-item">Dashboard</a>
+            <a href="/components/" class="nav-item active">Components</a>
+            <a href="/projects/" class="nav-item">Projects</a>
+            <a href="/analytics/" class="nav-item">Analytics</a>
+        </nav>
+    </aside>
+    
+    <main class="main-content">
+        <div class="top-navbar">
+            <h1>Component Inventory</h1>
+            <div class="user-info">
+                <span>Workshop Control Panel</span>
+            </div>
+        </div>
+        
+        <div class="filters">
+            <div class="filter-group">
+                <label>Search</label>
+                <input type="text" id="searchInput" placeholder="Search by name...">
+            </div>
+            <div class="filter-group">
+                <label>Category</label>
+                <select id="categoryFilter">
+                    <option value="">All Categories</option>
+                    <option value="FASTENERS">Fasteners</option>
+                    <option value="BEARINGS">Bearings</option>
+                    <option value="SHAFTS">Shafts</option>
+                    <option value="SHEET_METAL">Sheet Metal</option>
+                    <option value="MOTORS">Motors</option>
+                    <option value="ELECTRONICS">Electronics</option>
+                    <option value="CUSTOM_MACHINED">Custom Machined Parts</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>Material</label>
+                <input type="text" id="materialFilter" placeholder="Filter by material...">
+            </div>
+        </div>
+        
+        <div class="table-container">
+            <div class="table-header">
+                <h2>Components</h2>
+                <button class="btn-primary" onclick="openAddModal()">Add Component</button>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Category</th>
+                        <th>Material</th>
+                        <th>Stock</th>
+                        <th>Unit</th>
+                        <th>Cost/Unit</th>
+                        <th>Weight/Unit</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="componentsTable">
+                    <!-- Components will be loaded here -->
+                </tbody>
+            </table>
+        </div>
+    </main>
+</div>
+
+<!-- Add/Edit Component Modal -->
+<div id="componentModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h2 id="modalTitle">Add Component</h2>
+            <button class="close-modal" onclick="closeModal()">&times;</button>
+        </div>
+        <form id="componentForm">
+            <input type="hidden" id="componentId">
+            <div class="form-group">
+                <label>Name</label>
+                <input type="text" id="name" required>
+            </div>
+            <div class="form-group">
+                <label>Category</label>
+                <select id="category" required>
+                    <option value="FASTENERS">Fasteners</option>
+                    <option value="BEARINGS">Bearings</option>
+                    <option value="SHAFTS">Shafts</option>
+                    <option value="SHEET_METAL">Sheet Metal</option>
+                    <option value="MOTORS">Motors</option>
+                    <option value="ELECTRONICS">Electronics</option>
+                    <option value="CUSTOM_MACHINED">Custom Machined Parts</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Material</label>
+                <input type="text" id="material">
+            </div>
+            <div class="form-group">
+                <label>Unit Type</label>
+                <select id="unit_type" required>
+                    <option value="NOS">Numbers</option>
+                    <option value="KG">Kilograms</option>
+                    <option value="METER">Meters</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Weight per Unit (kg)</label>
+                <input type="number" id="weight_per_unit" step="0.001" required>
+            </div>
+            <div class="form-group">
+                <label>Cost per Unit ($)</label>
+                <input type="number" id="cost_per_unit" step="0.01" required>
+            </div>
+            <div class="form-group">
+                <label>Supplier Name</label>
+                <input type="text" id="supplier_name">
+            </div>
+            <div class="form-group">
+                <label>Current Stock</label>
+                <input type="number" id="current_stock" step="0.01" required>
+            </div>
+            <div class="form-group">
+                <label>Minimum Stock Level</label>
+                <input type="number" id="min_stock_level" step="0.01" required>
+            </div>
+            <button type="submit" class="btn">Save Component</button>
+        </form>
+    </div>
+</div>
+
+<script>
+let components = [];
+
+async function loadComponents() {
+    try {
+        const search = document.getElementById('searchInput').value;
+        const category = document.getElementById('categoryFilter').value;
+        const material = document.getElementById('materialFilter').value;
+        
+        components = await ComponentsAPI.getAll({ search, category, material });
+        renderComponents();
+    } catch (error) {
+        showAlert('Failed to load components: ' + error.message, 'danger');
+    }
+}
+
+function renderComponents() {
+    const table = document.getElementById('componentsTable');
+    table.innerHTML = components.map(c => `
+        <tr>
+            <td>${c.name}</td>
+            <td>${c.category}</td>
+            <td>${c.material || '-'}</td>
+            <td>${c.current_stock}</td>
+            <td>${c.unit_type}</td>
+            <td>${formatCurrency(c.cost_per_unit)}</td>
+            <td>${c.weight_per_unit} kg</td>
+            <td>
+                ${c.is_low_stock ? 
+                    '<span class="badge badge-danger">Low Stock</span>' : 
+                    '<span class="badge badge-success">OK</span>'}
+            </td>
+            <td>
+                <button class="btn-secondary" onclick="editComponent(${c.id})">Edit</button>
+                <button class="btn-danger" onclick="deleteComponent(${c.id})">Delete</button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function openAddModal() {
+    document.getElementById('modalTitle').textContent = 'Add Component';
+    document.getElementById('componentForm').reset();
+    document.getElementById('componentId').value = '';
+    document.getElementById('componentModal').classList.add('active');
+}
+
+function closeModal() {
+    document.getElementById('componentModal').classList.remove('active');
+}
+
+async function editComponent(id) {
+    const component = components.find(c => c.id === id);
+    if (!component) return;
+    
+    document.getElementById('modalTitle').textContent = 'Edit Component';
+    document.getElementById('componentId').value = component.id;
+    document.getElementById('name').value = component.name;
+    document.getElementById('category').value = component.category;
+    document.getElementById('material').value = component.material || '';
+    document.getElementById('unit_type').value = component.unit_type;
+    document.getElementById('weight_per_unit').value = component.weight_per_unit;
+    document.getElementById('cost_per_unit').value = component.cost_per_unit;
+    document.getElementById('supplier_name').value = component.supplier_name || '';
+    document.getElementById('current_stock').value = component.current_stock;
+    document.getElementById('min_stock_level').value = component.min_stock_level;
+    
+    document.getElementById('componentModal').classList.add('active');
+}
+
+async function deleteComponent(id) {
+    if (!confirm('Are you sure you want to delete this component?')) return;
+    
+    try {
+        await ComponentsAPI.delete(id);
+        showAlert('Component deleted successfully');
+        loadComponents();
+    } catch (error) {
+        showAlert('Failed to delete component: ' + error.message, 'danger');
+    }
+}
+
+document.getElementById('componentForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const data = {
+        name: document.getElementById('name').value,
+        category: document.getElementById('category').value,
+        material: document.getElementById('material').value,
+        unit_type: document.getElementById('unit_type').value,
+        weight_per_unit: document.getElementById('weight_per_unit').value,
+        cost_per_unit: document.getElementById('cost_per_unit').value,
+        supplier_name: document.getElementById('supplier_name').value,
+        current_stock: document.getElementById('current_stock').value,
+        min_stock_level: document.getElementById('min_stock_level').value,
+    };
+    
+    try {
+        const id = document.getElementById('componentId').value;
+        if (id) {
+            await ComponentsAPI.update(id, data);
+            showAlert('Component updated successfully');
+        } else {
+            await ComponentsAPI.create(data);
+            showAlert('Component created successfully');
+        }
+        closeModal();
+        loadComponents();
+    } catch (error) {
+        showAlert('Failed to save component: ' + error.message, 'danger');
+    }
+});
+
+document.getElementById('searchInput').addEventListener('input', loadComponents);
+document.getElementById('categoryFilter').addEventListener('change', loadComponents);
+document.getElementById('materialFilter').addEventListener('input', loadComponents);
+
+loadComponents();
+</script>
+{% endblock %}

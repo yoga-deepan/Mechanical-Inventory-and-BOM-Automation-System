@@ -1,0 +1,234 @@
+{% extends 'base.html' %}
+
+{% block title %}Project Details - Mechanical ERP{% endblock %}
+
+{% block content %}
+<div class="dashboard-layout">
+    <aside class="sidebar">
+        <div class="sidebar-header">
+            <h2>🔧 Mechanical ERP</h2>
+        </div>
+        <nav class="sidebar-nav">
+            <a href="/" class="nav-item">Dashboard</a>
+            <a href="/components/" class="nav-item">Components</a>
+            <a href="/projects/" class="nav-item active">Projects</a>
+            <a href="/analytics/" class="nav-item">Analytics</a>
+        </nav>
+    </aside>
+    
+    <main class="main-content">
+        <div class="top-navbar">
+            <h1 id="projectName">Project Details</h1>
+            <div class="user-info">
+                <span>Workshop Control Panel</span>
+            </div>
+        </div>
+        
+        <div class="card">
+            <h3>Project Information</h3>
+            <div id="projectInfo"></div>
+        </div>
+        
+        <div class="bom-builder">
+            <h2>Bill of Materials (BOM)</h2>
+            
+            <div class="filters">
+                <div class="filter-group">
+                    <label>Select Component</label>
+                    <select id="componentSelect">
+                        <option value="">-- Select Component --</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>Quantity Required</label>
+                    <input type="number" id="quantityInput" step="0.01" min="0.01" placeholder="Enter quantity">
+                </div>
+                <div class="filter-group" style="display: flex; align-items: flex-end;">
+                    <button class="btn-success" onclick="addBOMItem()">Add to BOM</button>
+                </div>
+            </div>
+            
+            <table style="margin-top: 20px;">
+                <thead>
+                    <tr>
+                        <th>Component</th>
+                        <th>Category</th>
+                        <th>Quantity</th>
+                        <th>Unit Cost</th>
+                        <th>Total Cost</th>
+                        <th>Unit Weight</th>
+                        <th>Total Weight</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="bomTable">
+                    <!-- BOM items will be loaded here -->
+                </tbody>
+            </table>
+            
+            <div class="bom-totals">
+                <div class="total-item">
+                    <h3>Grand Total Cost</h3>
+                    <div class="value" id="totalCost">$0.00</div>
+                </div>
+                <div class="total-item">
+                    <h3>Grand Total Weight</h3>
+                    <div class="value" id="totalWeight">0.000 kg</div>
+                </div>
+            </div>
+        </div>
+        
+        <button class="btn-primary" onclick="window.location.href='/projects/'">Back to Projects</button>
+    </main>
+</div>
+
+<script>
+const projectId = parseInt(window.location.pathname.split('/')[2]);
+let project = null;
+let components = [];
+let bomItems = [];
+
+async function loadProjectDetails() {
+    try {
+        [project, components, bomItems] = await Promise.all([
+            ProjectsAPI.getById(projectId),
+            ComponentsAPI.getAll(),
+            BOMAPI.getByProject(projectId)
+        ]);
+        
+        renderProjectInfo();
+        renderComponentSelect();
+        renderBOM();
+        calculateTotals();
+    } catch (error) {
+        showAlert('Failed to load project details: ' + error.message, 'danger');
+    }
+}
+
+function renderProjectInfo() {
+    document.getElementById('projectName').textContent = project.name;
+    
+    let statusBadge = 'badge-info';
+    if (project.status === 'IN_PROGRESS') statusBadge = 'badge-warning';
+    if (project.status === 'COMPLETED') statusBadge = 'badge-success';
+    
+    document.getElementById('projectInfo').innerHTML = `
+        <p><strong>Client:</strong> ${project.client_name || 'N/A'}</p>
+        <p><strong>Status:</strong> <span class="badge ${statusBadge}">${project.status.replace('_', ' ')}</span></p>
+        <p><strong>Start Date:</strong> ${formatDate(project.start_date)}</p>
+        <p><strong>Deadline:</strong> ${formatDate(project.deadline)}</p>
+        <p><strong>Description:</strong> ${project.description || 'N/A'}</p>
+    `;
+}
+
+function renderComponentSelect() {
+    const select = document.getElementById('componentSelect');
+    select.innerHTML = '<option value="">-- Select Component --</option>' +
+        components.map(c => `
+            <option value="${c.id}" 
+                data-cost="${c.cost_per_unit}" 
+                data-weight="${c.weight_per_unit}">
+                ${c.name} (Stock: ${c.current_stock})
+            </option>
+        `).join('');
+}
+
+function renderBOM() {
+    const table = document.getElementById('bomTable');
+    
+    if (bomItems.length === 0) {
+        table.innerHTML = '<tr><td colspan="8" style="text-align: center;">No items in BOM yet</td></tr>';
+        return;
+    }
+    
+    table.innerHTML = bomItems.map(item => {
+        const component = components.find(c => c.id === item.component);
+        if (!component) return '';
+        
+        return `
+            <tr>
+                <td>${item.component_name}</td>
+                <td>${item.component_category}</td>
+                <td>${item.quantity_required}</td>
+                <td>${formatCurrency(component.cost_per_unit)}</td>
+                <td>${formatCurrency(item.total_cost)}</td>
+                <td>${component.weight_per_unit} kg</td>
+                <td>${formatWeight(item.total_weight)}</td>
+                <td>
+                    <button class="btn-danger" onclick="removeBOMItem(${item.id})">Remove</button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+function calculateTotals() {
+    const totalCost = bomItems.reduce((sum, item) => sum + parseFloat(item.total_cost), 0);
+    const totalWeight = bomItems.reduce((sum, item) => sum + parseFloat(item.total_weight), 0);
+    
+    document.getElementById('totalCost').textContent = formatCurrency(totalCost);
+    document.getElementById('totalWeight').textContent = formatWeight(totalWeight);
+}
+
+// Live calculation on quantity input
+document.getElementById('quantityInput').addEventListener('input', () => {
+    const select = document.getElementById('componentSelect');
+    const selectedOption = select.options[select.selectedIndex];
+    const quantity = parseFloat(document.getElementById('quantityInput').value) || 0;
+    
+    if (selectedOption.value && quantity > 0) {
+        const cost = parseFloat(selectedOption.dataset.cost);
+        const weight = parseFloat(selectedOption.dataset.weight);
+        
+        console.log(`Preview: Cost = ${formatCurrency(cost * quantity)}, Weight = ${formatWeight(weight * quantity)}`);
+    }
+});
+
+async function addBOMItem() {
+    const componentId = document.getElementById('componentSelect').value;
+    const quantity = parseFloat(document.getElementById('quantityInput').value);
+    
+    if (!componentId || !quantity || quantity <= 0) {
+        showAlert('Please select a component and enter a valid quantity', 'warning');
+        return;
+    }
+    
+    try {
+        await BOMAPI.create({
+            project: projectId,
+            component: componentId,
+            quantity_required: quantity
+        });
+        
+        showAlert('Component added to BOM successfully');
+        document.getElementById('componentSelect').value = '';
+        document.getElementById('quantityInput').value = '';
+        
+        // Reload BOM
+        bomItems = await BOMAPI.getByProject(projectId);
+        renderBOM();
+        calculateTotals();
+    } catch (error) {
+        showAlert('Failed to add component: ' + error.message, 'danger');
+    }
+}
+
+async function removeBOMItem(id) {
+    if (!confirm('Remove this item from BOM?')) return;
+    
+    try {
+        await BOMAPI.delete(id);
+        showAlert('Item removed from BOM');
+        
+        // Reload BOM
+        bomItems = await BOMAPI.getByProject(projectId);
+        renderBOM();
+        calculateTotals();
+    } catch (error) {
+        showAlert('Failed to remove item: ' + error.message, 'danger');
+    }
+}
+
+loadProjectDetails();
+</script>
+{% endblock %}
